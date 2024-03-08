@@ -14,7 +14,7 @@ import lombok.Data;
 @ApiModel(value = "登陆验证返回对象", description = "")
 public class Result {
 
-    @ApiModelProperty(value = "返回code,0为失败，1为成功")
+    @ApiModelProperty(value = "返回code,1为失败，0为成功")
     private int code;
 
     @ApiModelProperty(value = "返回提示信息")

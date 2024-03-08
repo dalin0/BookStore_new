@@ -1,24 +1,26 @@
 package com.ctgu.bookstore.controller;
 
 
-import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.ctgu.bookstore.entity.Book;
+import com.ctgu.bookstore.entity.Dto.UserDto;
 import com.ctgu.bookstore.entity.User;
 import com.ctgu.bookstore.entity.VerifyCode;
 import com.ctgu.bookstore.service.UserService;
-import com.ctgu.bookstore.utils.ResultFactory;
-import com.ctgu.bookstore.utils.UserExcelUtils;
+import com.ctgu.bookstore.utils.*;
 import com.ctgu.bookstore.utils.authCode.IVerifyCodeGen;
 import com.ctgu.bookstore.utils.authCode.SimpleCharVerifyCodeGenImpl;
+import com.ctgu.bookstore.utils.vo.ResultEnum;
 import io.swagger.annotations.ApiOperation;
+import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authc.IncorrectCredentialsException;
 import org.apache.shiro.authc.UnknownAccountException;
 import org.apache.shiro.authc.UsernamePasswordToken;
-import org.apache.shiro.crypto.SecureRandomNumberGenerator;
-import org.apache.shiro.crypto.hash.SimpleHash;
 import org.apache.shiro.subject.Subject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -26,13 +28,15 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.io.IOException;
-import java.util.List;
+import java.io.OutputStream;
+import java.text.SimpleDateFormat;
+import java.util.*;
+
 import com.ctgu.bookstore.entity.Result;
-import org.springframework.web.util.HtmlUtils;
+
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
-import java.util.UUID;
 
 /**
  * @program: bookstore
@@ -54,6 +58,9 @@ public class UserController {
 
     @Autowired
     private RedisTemplate redisTemplate;
+
+    @Autowired
+    JwtUtils jwtUtils;
 
 //    @GetMapping("/userLogin/{email}/{password}")
 //    @ApiOperation("用于测试登录")
@@ -85,105 +92,89 @@ public class UserController {
         return userService.list(null).size();
     }
 
+
     @PostMapping(value = "/userLogin")
     @ApiOperation("会员登录")
-    public Result login(@RequestBody  String json) {
-        JSONObject v= JSONObject.parseObject(json);
-        System.out.println(v);
-        System.out.println("接收到的参数+" + v.get("email") + "         " + v.get("password") + "      " + v.get("verCode"));
-        String email= v.getString("email");
-        String password = v.getString("password");
-        String verCode = v.getString("verCode");
-        //从redis中取出验证码
-        ValueOperations<String, String> operations = redisTemplate.opsForValue();
-        String LoginCode = operations.get("LoginCode");
-        System.out.println("是不是取到了验证码哦woc" + LoginCode);
-        Result result = new Result();
-        User user = userService.getByEmail(email);
-        Subject subject = SecurityUtils.getSubject();
-        // 封装用户数据
-        UsernamePasswordToken usernamePasswordToken = new UsernamePasswordToken(email, password);
-        System.out.println("封装后的token：" + usernamePasswordToken);
-        System.out.println("试着取一下邮箱" + usernamePasswordToken.getUsername());
-        // 执行登录方法
-        System.out.println("前端接收到的验证码：" + verCode);
-        if (!operations.get("LoginCode").equals(verCode)){
-            result.setCode(404);
-            result.setMsg("验证码错误");
-            return result;
-        }
+    public com.ctgu.bookstore.utils.vo.Result login(@RequestBody UserDto userDto) {
+        log.info("登录信息： " + userDto);
+        User user = null;
         try {
-            subject.login(usernamePasswordToken);
-            result.setCode(0);
-            result.setMsg("登录成功");
-            result.setData(user);
-            session.setAttribute("user", user);
-            String token = UUID.randomUUID().toString();
-            result.setToken(token);
-            return result;
-        } catch (UnknownAccountException e) {
-            result.setCode(404);
-            result.setMsg("邮箱错误");
-            return result;
-        } catch (IncorrectCredentialsException e) {
-            result.setCode(403);
-            result.setMsg("密码错误");
-            return result;
+            user = userService.getByEmail(userDto.getEmail());
+        } catch (Exception e) {
+            return ResultUtil.error("网络有误，请刷新后重试");
         }
+        log.info("用户信息： " + user);
+        if (user == null) {
+            return ResultUtil.error(ResultEnum.LOGIN_FAILED);
+        }
+        if (!EncryptionUtils.getSaltverifyMD5(userDto.getUserPassword(), user.getUserPassword(), user.getSalt())){
+            return ResultUtil.error(ResultEnum.LOGIN_FAILED);
+        }
+        // 从Redis中取出验证码
+        ValueOperations<String, String> operations = redisTemplate.opsForValue();
+        if (!operations.get("LoginCode").equals(userDto.getVerCode())) {
+            return ResultUtil.error("验证码错误", ResultEnum.FAIL);
+        }
+        // 验证通过， 生成token， 并返回数据
+        Map<String, Object> map = new HashMap<>();
+        map.put("avatar", user.getAvatar());
+        // 封装用户数据
+        String token = jwtUtils.createJwt(user.getUserId().toString(), userDto.getEmail(), map);
+        log.info("生成的token串： " + token);
+        return ResultUtil.success(token, ResultEnum.SUCCESS, user);
     }
 
 
     @PostMapping("/register")
     @ApiOperation("会员注册")
-    public Result register(@RequestBody String json){
-        System.out.println(json);
-        JSONObject v= JSONObject.parseObject(json);
-//        User newUser= JSON.toJavaObject(v,User.class);
-        String email = v.getString("z_email");
-        String password = v.getString("z_pass");
-        email = HtmlUtils.htmlEscape(email);
+    public com.ctgu.bookstore.utils.vo.Result register(@RequestBody User user){
+        String passWord = user.getUserPassword();
+        System.out.println(passWord);
+        log.info("用户信息第一个： " + user);
         User newUser = new User();
-        newUser.setEmail(email);
-        boolean exist = userService.isExist(email);
-        if (!exist) {
-            String message = "用户名已被使用";
-            return ResultFactory.buildFailResult(message);
+        try{
+            QueryWrapper<User> qw = new QueryWrapper<>();
+            qw.eq("email", user.getEmail());
+            newUser = userService.getOne(qw);
+        } catch (Exception e) {
+            return ResultUtil.error("网络异常，请刷新后重试");
         }
-        newUser.setNickName(v.getString("z_user"));
-        newUser.setPhoneNumber(v.getString("z_tel"));
-        newUser.setUserPassword(v.getString("z_pass"));
-        newUser.setName(v.getString("z_name"));
-        newUser.setSex(v.getString("z_sex"));
-        // 生成盐，默认长度为16位
-        String salt = new SecureRandomNumberGenerator().nextBytes().toString();
-        // 设置 Hash算法迭代次数
-        int times = 2;
-        // 得到hash后的密码
-        String encodePassword = new SimpleHash("md5", password, salt, times).toString();
-        // 储存用户信息，包括salt于hash后的密码
-        newUser.setSalt(salt);
-        newUser.setUserPassword(encodePassword);
-        userService.save(newUser);
-        // 注册完成，进行登录操作
-        Result result = new Result();
-        User user = userService.getByEmail(email);
-        Subject subject = SecurityUtils.getSubject();
-        // 封装用户数据
-        UsernamePasswordToken usernamePasswordToken = new UsernamePasswordToken(email, password);
-        // 执行登录方法
+        if (newUser != null) {
+            return ResultUtil.error("邮箱已存在");
+        }
         try {
-            subject.login(usernamePasswordToken);
-            result.setCode(0);
-            result.setMsg("登录成功");
-            result.setData(user);
-            session.setAttribute("user", user);
-            String token = UUID.randomUUID().toString();
-            result.setToken(token);
-            return result;
-        }catch (Exception e){
-            result.setMsg("未知错误");
-            return result;
+            // 随机生成盐
+            String salt = UUID.randomUUID().toString();
+            // 存储加密后的密码
+            user.setUserPassword(EncryptionUtils.getSaltMD5(user.getUserPassword(), salt));
+            user.setSalt(salt);
+            user.setAvatar("http://s9vf5jis6.hn-bkt.clouddn.com/img/1.jpg");
+            userService.save(user);
+        }catch (Exception e) {
+            log.error(e.getMessage());
+            return ResultUtil.error("注册信息有误");
         }
+//        return ResultUtil.success("注册成功");
+        // 注册完成，进行登录操作
+        User user1 = null;
+        try {
+            user1 = userService.getByEmail(user.getEmail());
+        } catch (Exception e) {
+            return ResultUtil.error("网络有误，请刷新后重试");
+        }
+        log.info("用户信息user1： " + user1);
+        if (user1 == null) {
+            return ResultUtil.error(ResultEnum.LOGIN_FAILED);
+        }
+        if (!EncryptionUtils.getSaltverifyMD5(passWord, user1.getUserPassword(), user1.getSalt())) {
+            return ResultUtil.error(ResultEnum.LOGIN_FAILED);
+        }
+        // 验证通过， 生成token， 并返回数据
+        Map<String, Object> map = new HashMap<>();
+        map.put("avatar", user1.getAvatar());
+        String token = jwtUtils.createJwt(user1.getUserId().toString(), user1.getEmail(), map);
+        log.info("生成的token串： " + token);
+        return ResultUtil.success(token, ResultEnum.SUCCESS, user1);
     }
 
 //    @PostMapping("/register/{email}/{password}")
@@ -223,9 +214,32 @@ public class UserController {
 
     @GetMapping("/export")
     @ApiOperation("批量导出用户信息")
-    public ResponseEntity<byte[]> exportUser(){
-        List list = userService.list(null);
-        return UserExcelUtils.export(list);
+    public void exportUser(HttpServletRequest request, HttpServletResponse response){
+//        List list = userService.list(null);
+//        System.out.println(list);
+//        return UserExcelUtils.export(list);
+        try{
+            List<User> usersList = userService.list(null);
+            String[] headerName = { "id","昵 称", "邮 箱", "电 话","性 别","地 址","用户等级","生 日","头像地址"};
+            String[] headerKey = { "userId","userLevel", "email", "phoneNumber","sex","address","userLevel","birthday","avatar"};
+            HSSFWorkbook wb = ExcelUtil.createExcel(headerName, headerKey, "用户信息管理表", usersList);
+            if (wb == null) {
+                return;
+            }
+            response.setContentType("application/vnd.ms-excel");
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
+            Date date = new Date();
+            String str = sdf.format(date);
+            String fileName = "用户信息管理" + str;
+            response.setHeader("Content-disposition",
+                    "attachment;filename=" + "User信息表" + ".xls");
+            OutputStream ouputStream = response.getOutputStream();
+            ouputStream.flush();
+            wb.write(ouputStream);
+            ouputStream.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     @GetMapping("/find/{id}")

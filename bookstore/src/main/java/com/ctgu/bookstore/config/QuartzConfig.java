@@ -20,7 +20,7 @@ public class QuartzConfig {
 
     @Bean
     public Trigger testQuartzTrigger1() {
-        //2个小时持久化到数据库
+        //2个小时到数据库
         SimpleScheduleBuilder scheduleBuilder = SimpleScheduleBuilder.simpleSchedule()
                 .withIntervalInHours(2)
                 .repeatForever();

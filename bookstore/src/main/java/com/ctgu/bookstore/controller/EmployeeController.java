@@ -5,10 +5,12 @@ import com.ctgu.bookstore.entity.Employee;
 import com.ctgu.bookstore.entity.Result;
 import com.ctgu.bookstore.service.EmployeeService;
 import com.ctgu.bookstore.utils.EmployExcelUtils;
+import com.ctgu.bookstore.utils.ExcelUtil;
 import com.ctgu.bookstore.utils.ResultFactory;
 import com.ctgu.bookstore.utils.UserExcelUtils;
 import io.swagger.annotations.ApiOperation;
 import org.apache.http.HttpResponse;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.shiro.authc.AuthenticationException;
 import org.apache.shiro.authc.IncorrectCredentialsException;
 import org.apache.shiro.authc.UnknownAccountException;
@@ -28,11 +30,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
-import java.util.List;
+import java.io.OutputStream;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 /**
  * @program: bookstore
@@ -121,9 +123,31 @@ public class EmployeeController {
 
     @GetMapping("/export")
     @ApiOperation("批量导出雇员信息")
-    public ResponseEntity<byte[]> exportUser(){
-        List list = employeeService.list(null);
-        return EmployExcelUtils.export(list);
+    public void exportUser(HttpServletRequest request, HttpServletResponse response){
+//        List list = employeeService.list(null);
+//        return EmployExcelUtils.export(list);
+        try{
+            List<Employee> employeesList = employeeService.list(null);
+            String[] headerName = { "id","姓 名", "邮 箱", "联系方式","性 别","所属部门","工 资","生 日","家庭住址","头像url"};
+            String[] headerKey = { "empId","name", "email", "phoneNumber","sex","department","salary","birthday","address","address"};
+            HSSFWorkbook wb = ExcelUtil.createExcel(headerName, headerKey, "用户信息管理表", employeesList);
+            if (wb == null) {
+                return;
+            }
+            response.setContentType("application/vnd.ms-excel");
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
+            Date date = new Date();
+            String str = sdf.format(date);
+            String fileName = "员工信息管理" + str;
+            response.setHeader("Content-disposition",
+                    "attachment;filename=" + "Employee信息表" + ".xls");
+            OutputStream ouputStream = response.getOutputStream();
+            ouputStream.flush();
+            wb.write(ouputStream);
+            ouputStream.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     @GetMapping("/find/{id}")

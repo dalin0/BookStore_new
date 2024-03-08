@@ -68,4 +68,6 @@ public class User implements Serializable {
 
     @ApiModelProperty(value = "加盐")
     private String salt;
+
+
 }

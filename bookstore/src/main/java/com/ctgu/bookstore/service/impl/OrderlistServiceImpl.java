@@ -25,6 +25,7 @@ public class OrderlistServiceImpl extends ServiceImpl<OrderlistMapper, Orderlist
 
     @Autowired
     private OrderlistMapper orderlistMapper;
+
     @Override
     public IPage<Orderlist> getListByFuzzy(String fuzzy, int page ,int size) {
         QueryWrapper<Orderlist> qw = new QueryWrapper<>();

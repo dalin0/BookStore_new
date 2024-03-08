@@ -24,6 +24,7 @@ import java.util.List;
  * @create: 2024-3-6
  **/
 public class UserExcelUtils {
+
     public static ResponseEntity<byte[]> export(List<User> userList) {
         //1.创建一个excel文档
         HSSFWorkbook hssfWorkbook = new HSSFWorkbook();
@@ -34,9 +35,9 @@ public class UserExcelUtils {
         //文档类别
         docInfo.setCategory("用户信息");
         //文档管理员
-        docInfo.setManager("Linn");
+        docInfo.setManager("Nidol");
         //文档所属公司
-        docInfo.setCompany("Java答辩");
+        docInfo.setCompany("个人");
         //文档版本
         docInfo.setApplicationVersion(1);
         //4.获取文档摘要信息

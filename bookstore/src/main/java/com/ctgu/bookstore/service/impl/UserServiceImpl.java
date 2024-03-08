@@ -31,6 +31,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         QueryWrapper<User> qw = new QueryWrapper<>(userCondition);
         return userMapper.selectOne(qw);
     }
+
     @Override
     public IPage<User> getListUserByFuzzy(String field, int page, int size) {
         QueryWrapper<User> wrapper = new QueryWrapper<>();
@@ -98,7 +99,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         user.setEmail(email);
         QueryWrapper<User> queryWrapper = new QueryWrapper<>(user);
         User user1 = userMapper.selectOne(queryWrapper);
-        System.out.println("看看看看看看看" + user1);
+        System.out.println("看看看看看看看新注册的用户是否已经存在数据库： " + user1);
         if (user1 != null){
             return false;
         }else {
